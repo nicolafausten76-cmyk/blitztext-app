@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/build/
+**/.gradle/
+**/local.properties
+**/vendor/
+dist/
+*.bin
+*.wav
+*.dpapi
+*.keystore
+*.jks

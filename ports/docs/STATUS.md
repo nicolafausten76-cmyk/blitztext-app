@@ -1,0 +1,60 @@
+# Projektstand und Abnahme
+
+29. Oktober 2026. Entwurf; keine vollständige Funktionsgleichheit.
+
+## Auftrag und Kontext
+
+Blitztext als Windows- und Android-Anwendung umsetzen. Offline als Standard,
+Online optional, lokale Nutzung ohne API-Gebühren.
+Führende Ablage: dieser Repository-Ordner. Quellen: beauftragtes Repository,
+öffentliche Herstellerdokumentation, ausdrücklich genannte Geräte.
+Keine Daten aus der Wissens-Vault oder Zugangsdaten in den öffentlichen Quellcode übernehmen.
+
+## Funktionsmatrix
+
+| Funktion | Windows-Quellcode 0.1 | Android-Quellcode 0.1 |
+|---|---|---|
+| Lokale Spracherkennung | whisper.cpp CLI | whisper.cpp JNI |
+| Mikrofon | 16 kHz PCM, bis 5 min | 16 kHz PCM, bis 90 s |
+| Eingabe in andere Apps | Hotkey und Einfügen | Android-Spracheingabe (IME) |
+| Hintergrundzugriff | Tray | IME |
+| Wörterbuch | Regeln | Regeln |
+| Vier Schreibmodi | Optional lokales Ollama | Offen |
+| Verlauf | Optional, DPAPI | Nur flüchtiger letzter Text |
+| Datei-/WhatsApp-Audio-Import | Offen | Offen |
+| Meeting-Aufnahme/Sprechertrennung | Offen | Offen, Plattformgrenzen prüfen |
+| Meeting-Zusammenfassung | Offen | Offen |
+| App-/Website-Regeln | Offen | Offen |
+| Anpassung an Cursor-Kontext | Offen | Offen |
+| Audiowiedergabe stummschalten | Offen | Offen |
+| Optionale Online-Verarbeitung | Offen | Offen |
+| Signierung/Updates | Offen | Debugsignatur; Release offen |
+
+Quellcode ist bis zum Build und Gerätetest keine bestätigte Produkteigenschaft.
+
+## Abnahme des Kernablaufs
+
+- Modell laden, Internet trennen, deutsch diktieren.
+- Identische zehn Testtexte mit Namen, Zahlen, Umlauten und Fachbegriffen.
+- Aufnahmezeit, Wartezeit ab Stopp, Fehler und Korrekturen dokumentieren.
+- Stille, zu kurze Aufnahme, fehlendes Mikrofon und fehlendes/beschädigtes Modell.
+- Fokus während der Verarbeitung wechseln: kein Einfügen ins neue Feld.
+- Windows: Editor, Browser, Mailentwurf; Zwischenablage vorher/nachher.
+- Android: Mailentwurf, Browser, Messenger-Entwurf, Passwortfeld und Tastaturwechsel.
+- Aufnahme/Erkennung abbrechen, App wechseln/schließen und erneut aufnehmen.
+- Ollama ausgefallen: Original erhalten, keine externe Verbindung.
+- Verlauf aus/ein, Verschlüsselung, bestätigtes Löschen.
+- Temporäre Windows-Audio-Dateien nach regulärem Abschluss entfernt.
+
+Mit erfundenen Texten testen; keine echten Nachrichten senden.
+Keine Mikrofon- oder S23-Ultra-Gerätetests in der Entwicklungsumgebung erfolgt.
+
+## Grenzen und nächste Schritte
+
+Native Android-Berechnung kann nach Abbruch auslaufen.
+Windows-Clipboard-Wiederherstellung verwendet eine Wartezeit, keine Lesequittung.
+Windows-Rohaufnahmen können bei Absturz zurückbleiben.
+Leistung und Qualität auf 8-GB-Hardware müssen gemessen werden.
+Beliebige Android-Telefon-/VoIP-Aufnahmen werden nicht zugesagt.
+Zuerst Builds und Gerätetests, anschließend offene Originalfunktionen ergänzen.
+Den App-Entwicklungs-Skill aus dem geprüften Ablauf ableiten; noch nicht installiert.

@@ -1,0 +1,92 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using NAudio.Wave;
+namespace Sprechklar;
+
+public static class Pipeline
+{
+    public static string Engine => Path.Combine(AppContext.BaseDirectory, "engine", "whisper-cli.exe");
+    public static async Task DownloadModel(string model, IProgress<string> progress, CancellationToken ct)
+    {
+        model = model == "tiny" ? "tiny" : "base";
+        string expected = model == "tiny" ? "bd577a113a864445d4c299885e0cb97d4ba92b5f" : "465707469ff3a37a2b9b8d8f89f2f99de7299dac";
+        string dest = Storage.ModelPath(model); Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+        string tmp = dest + "." + Guid.NewGuid() + ".part";
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(15) };
+            using var response = await client.GetAsync("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-" + model + ".bin", HttpCompletionOption.ResponseHeadersRead, ct);
+            response.EnsureSuccessStatusCode();
+            await using (var output = File.Create(tmp))
+            await using (var source = await response.Content.ReadAsStreamAsync(ct))
+            {
+                byte[] buffer = new byte[81920]; long total = 0; int count;
+                while ((count = await source.ReadAsync(buffer, ct)) != 0)
+                {
+                    total += count;
+                    if (total > 170_000_000) throw new IOException("Modell ist unerwartet groß.");
+                    await output.WriteAsync(buffer.AsMemory(0, count), ct);
+                    progress.Report($"Modell laden: {total / 1024 / 1024} MB");
+                }
+            }
+            // Checksum as published by whisper.cpp. Detects changed/corrupt content;
+            // SHA-1 is not a modern authenticity guarantee. Download transport is HTTPS.
+            await using (var file = File.OpenRead(tmp))
+            {
+                string actual = Convert.ToHexString(await SHA1.HashDataAsync(file, ct)).ToLowerInvariant();
+                if (actual != expected) throw new IOException("Modell-Prüfsumme stimmt nicht. Download verworfen.");
+            }
+            File.Move(tmp, dest, true);
+        }
+        finally { if (File.Exists(tmp)) File.Delete(tmp); }
+    }
+    public static async Task<string> Transcribe(string wav, Settings config, CancellationToken ct)
+    {
+        if (!File.Exists(Engine)) throw new IOException("Spracherkennungs-Engine fehlt im Unterordner engine.");
+        if (!File.Exists(Storage.ModelPath(config.Model))) throw new IOException("Bitte zuerst das Sprachmodell laden.");
+        using (var reader = new WaveFileReader(wav))
+        {
+            if (reader.TotalTime.TotalSeconds < 0.3) return "";
+            if (reader.TotalTime.TotalMinutes > 5) throw new IOException("Diese erste Version verarbeitet maximal fünf Minuten pro Aufnahme.");
+        }
+        string output = Path.Combine(Path.GetTempPath(), "sprechklart-result-" + Guid.NewGuid());
+        var psi = new ProcessStartInfo(Engine) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true };
+        foreach (string arg in new[] { "-m", Storage.ModelPath(config.Model), "-f", wav, "-l", config.Language == "auto" ? "auto" : "de", "-t", "4", "-otxt", "-of", output, "-np" }) psi.ArgumentList.Add(arg);
+        try
+        {
+            using var process = Process.Start(psi) ?? throw new IOException("Engine konnte nicht starten.");
+            using var registration = ct.Register(() => { try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { } });
+            Task<string> stderr = process.StandardError.ReadToEndAsync();
+            Task<string> stdout = process.StandardOutput.ReadToEndAsync();
+            await process.WaitForExitAsync(ct); await stdout; await stderr;
+            ct.ThrowIfCancellationRequested();
+            if (process.ExitCode != 0) throw new IOException("Lokale Spracherkennung fehlgeschlagen. Engine oder Modell prüfen. Exit-Code: " + process.ExitCode);
+            return Core.ReplaceTerms(Core.Clean(await File.ReadAllTextAsync(output + ".txt", ct)), config.Dictionary);
+        }
+        finally { if (File.Exists(output + ".txt")) File.Delete(output + ".txt"); }
+    }
+    public static async Task<string> Rewrite(string text, int mode, Settings config, CancellationToken ct)
+    {
+        if (mode == 0 || text.Length == 0) return text;
+        if (string.IsNullOrWhiteSpace(config.OllamaModel)) throw new InvalidOperationException("Für Schreibmodi ein installiertes Ollama-Modell eintragen. Das wortgetreue Transkript bleibt erhalten.");
+        using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+        using var response = await client.PostAsJsonAsync("http://127.0.0.1:11434/api/chat", new
+        {
+            model = config.OllamaModel.Trim(), stream = false,
+            messages = new[] { new { role = "system", content = Core.Instruction(mode) }, new { role = "user", content = text } },
+            options = new { temperature = 0, num_ctx = 2048 }
+        }, ct);
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        string result = doc.RootElement.GetProperty("message").GetProperty("content").GetString()?.Trim() ?? "";
+        if (result.Length == 0) throw new IOException("Das Textmodell hat keine Antwort geliefert. Original bleibt erhalten.");
+        return result;
+    }
+}

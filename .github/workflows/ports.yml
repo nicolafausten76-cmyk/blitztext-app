@@ -1,0 +1,83 @@
+name: Windows and Android ports
+on:
+  push:
+    branches: ["feature/windows-android-offline"]
+    paths: ["ports/**", ".github/workflows/ports.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ports-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/whisper.cpp
+          ref: d1be6fde11ac6e0407606b4e42fe72d34add8037
+          path: ports/vendor/whisper.cpp
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Test pure text logic
+        run: dotnet test ports/windows/Sprechklar.Tests/Sprechklar.Tests.csproj -c Release
+      - name: Build local speech engine
+        shell: pwsh
+        run: |
+          cmake -S ports/vendor/whisper.cpp -B ports/vendor/whisper-build -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build ports/vendor/whisper-build --config Release --target whisper-cli -j 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish self-contained Windows app
+        shell: pwsh
+        run: |
+          dotnet publish ports/windows/Sprechklar/Sprechklar.csproj -c Release -r win-x64 --self-contained true -o ports/dist/Sprechklar
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory ports/dist/Sprechklar/engine -Force | Out-Null
+          Copy-Item ports/vendor/whisper-build/bin/Release/whisper-cli.exe ports/dist/Sprechklar/engine/
+          Get-ChildItem ports/vendor/whisper-build -Recurse -Filter *.dll | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination ports/dist/Sprechklar/engine/ -Force }
+          Copy-Item ports/vendor/whisper.cpp/LICENSE ports/dist/Sprechklar/engine/WHISPER-LICENSE.txt
+          Copy-Item ports/README.md ports/dist/Sprechklar/ANLEITUNG.md
+          Copy-Item ports/THIRD_PARTY_NOTICES.md ports/dist/Sprechklar/
+      - name: CLI startup smoke test
+        shell: pwsh
+        run: |
+          & ports/dist/Sprechklar/engine/whisper-cli.exe --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sprechklar-Windows-x64-preview
+          path: ports/dist/Sprechklar/
+          retention-days: 30
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/whisper.cpp
+          ref: d1be6fde11ac6e0407606b4e42fe72d34add8037
+          path: ports/android/vendor/whisper.cpp
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Install Android toolchain
+        run: sdkmanager "platforms;android-36" "build-tools;35.0.0" "ndk;28.2.13676358" "cmake;3.22.1"
+      - name: Build APK and lint
+        working-directory: ports/android
+        run: gradle --no-daemon :app:assembleDebug :app:lintDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sprechklar-Android-arm64-preview
+          path: ports/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30

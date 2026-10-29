@@ -1,0 +1,3 @@
+<input-method xmlns:android="http://schemas.android.com/apk/res/android" android:settingsActivity="de.nicola.sprechklart.MainActivity" android:supportsSwitchingToNextInputMethod="true">
+    <subtype android:label="@string/voice_name" android:languageTag="de-DE" android:imeSubtypeLocale="de_DE" android:imeSubtypeMode="voice"/>
+</input-method>
