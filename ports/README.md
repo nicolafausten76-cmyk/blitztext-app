@@ -1,6 +1,6 @@
 # Sprechklar — Windows und Android
 
-Entwicklungsvorschau 0.1. Native Umsetzung der Blitztext-Idee mit eigener Identität.
+Entwicklungsvorschau 0.1.1. Native Umsetzung der Blitztext-Idee mit eigener Identität.
 Das macOS-Original bleibt unverändert. Noch keine vollständige Funktionsgleichheit.
 
 ## Downloads
@@ -19,12 +19,14 @@ Zum Download ist eine GitHub-Anmeldung nötig. Build-Erfolg ersetzt keinen Gerä
    **Strg+Umschalt+Leertaste** startet und stoppt die Aufnahme.
 7. **Strg+Alt+Rücktaste** bricht ab. Maximal fünf Minuten je Aufnahme.
 
-Bei einem Wechsel des Zielfensters oder des über UI Automation erkannten Eingabefelds wird nicht blind eingefügt. Das Ergebnis kann
-in Sprechklar kopiert werden. Die Zwischenablage wird nach einer Karenzzeit
-wiederhergestellt, wenn inzwischen niemand etwas anderes kopiert hat.
-Windows bestätigt nicht, ob das Zielprogramm den Text angenommen hat.
-Erhöhte Programme, Passwortfelder, Remote-Sitzungen und langsame Zwischenablagen
-müssen gesondert auf dem Gerät getestet werden.
+Nach der Erkennung öffnet sich zuerst Sprechklar zur Prüfung. Es wird **nichts automatisch
+eingefügt**. Nach Prüfung **Text für ursprüngliches Zielfeld freigeben** wählen,
+zum ursprünglichen Feld wechseln und innerhalb von 60 Sekunden **Strg+Alt+Eingabe**
+drücken. Änderungen, neue Aufnahmen und Abbruch widerrufen die einmalige Freigabe.
+Bei geändertem Fenster/Feld oder Passwortfeld wird nicht eingefügt.
+Alternativ den geprüften Text bewusst kopieren. Clipboard-Datenschutzmarker schließen
+Verlauf/Cloud-Synchronisierung aus; die aktuelle Zwischenablage ist weiterhin für
+berechtigte Programme sichtbar. Die Annahme im Zielprogramm bleibt auf dem Gerät zu prüfen.
 
 Für die drei Schreibmodi: Ollama separat installieren, ein kleines mehrsprachiges
 Textmodell laden, Ollama im lokalen Modus (OLLAMA_NO_CLOUD=1) betreiben und dessen Modellnamen eintragen. Nur 127.0.0.1:11434 wird angesprochen.
@@ -33,9 +35,9 @@ Bei Ausfall bleibt das wortgetreue Transkript erhalten; kein Cloud-Fallback.
 Verlauf ist standardmäßig aus. Optional werden maximal 100 Ergebnisse mit
 Windows-DPAPI verschlüsselt gespeichert. Löschen ist in der App nach Bestätigung möglich.
 Einstellungen und Modelle: %LOCALAPPDATA%/Sprechklar.
-Rohaufnahmen liegen während der Verarbeitung im Benutzer-Tempordner und werden
-nach regulärem Abschluss oder Abbruch gelöscht. Bei Absturz können Dateien bleiben;
-temporäre Rohaufnahmen sind in 0.1 nicht separat verschlüsselt.
+Aufnahme und Transkript werden über RAM und Prozess-Pipes verarbeitet; Sprechklar 0.1.1
+erzeugt dafür keine temporären WAV-/TXT-Dateien. Frühere Dateien werden nicht automatisch
+gelöscht. Betriebssystem-Paging/Crashdumps sind dadurch nicht ausgeschlossen.
 
 ## Android / ARM64, einschließlich Android 16
 
@@ -54,9 +56,10 @@ Ein Abbruch verhindert das Einfügen; die native Berechnung kann noch auslaufen.
 Diese Android-Vorschau enthält noch keine Schreibmodi, Meeting-Aufzeichnung oder
 gespeicherten Verlauf. Der letzte Text bleibt nur im laufenden App-Prozess.
 
-Die APK ist mit einem temporären Entwicklungszertifikat signiert.
-Bei einem späteren CI-Build kann eine Deinstallation nötig sein; diese entfernt
-Einstellungen und Modelle. Dauerhafte Release-Signierung folgt.
+Android verwendet jetzt einen nicht debuggbaren Release-Build. Ein installierbares Paket
+wird nur bei hinterlegtem privatem Signierschlüssel veröffentlicht. Ohne Schlüssel wird
+ausschließlich ein nicht installierbarer UNSIGNED-Kandidat für die technische Prüfung gebaut.
+[Einmalige Einrichtung und Sicherheitsstatus](docs/SECURITY.md).
 Es erfolgt keine Play-Store-Veröffentlichung.
 
 ## Datenschutz und Kosten
@@ -82,7 +85,7 @@ Android: JDK 17, Gradle 8.13, SDK 36, NDK 28.2.13676358, CMake 3.22.1.
 whisper.cpp nach ports/android/vendor/whisper.cpp auschecken und auf den unten
 genannten Commit setzen. Im Ordner ports/android ausführen:
 
-    gradle :app:assembleDebug :app:lintDebug
+    gradle :app:testReleaseUnitTest :app:assembleRelease :app:lintRelease
 
 Exakte Build-Schritte: .github/workflows/ports.yml.
 Modelle sind nicht im Repository enthalten; Erstdownload erforderlich.
@@ -93,3 +96,10 @@ Modelle sind nicht im Repository enthalten; Erstdownload erforderlich.
 - whisper.cpp v1.9.5: d1be6fde11ac6e0407606b4e42fe72d34add8037.
 - [Fortschritt und Abnahme](docs/STATUS.md).
 - [Drittanbieterhinweise](THIRD_PARTY_NOTICES.md).
+
+## Sicherheitsprüfung vor dem Download
+
+Nur die Pakete **Sprechklar-Windows-x64-security-preview** beziehungsweise
+**Sprechklar-Android-arm64-security-preview** verwenden. Der zugehörige Lauf muss erfolgreich
+sein. **candidate-*** sind ungeprüfte Zwischenstände. Scanberichte liegen separat als
+**Sprechklar-security-reports** vor. [Prüfumfang und Grenzen](docs/SECURITY.md).

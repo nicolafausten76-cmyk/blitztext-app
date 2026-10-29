@@ -1,40 +1,43 @@
 using System;
 using System.IO;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using NAudio.Wave;
 namespace Sprechklar;
 
+// No raw recording is written to disk. The child engine receives a WAV over stdin.
 public sealed class Recorder
 {
     private WaveInEvent? input;
     private WaveFileWriter? writer;
-    private string? path;
-    private TaskCompletionSource<string>? completion;
+    private MemoryStream? buffer;
+    private TaskCompletionSource<byte[]>? completion;
     private readonly object gate = new();
     public void Start(int device)
     {
         lock (gate)
         {
             if (input != null) throw new InvalidOperationException("Aufnahme läuft bereits.");
-            path = Path.Combine(Path.GetTempPath(), "sprechklart-" + Guid.NewGuid() + ".wav");
             completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
             try
             {
+                buffer = new MemoryStream();
                 input = new WaveInEvent { DeviceNumber = device, WaveFormat = new WaveFormat(16000, 16, 1), BufferMilliseconds = 100 };
-                writer = new WaveFileWriter(path, input.WaveFormat);
+                writer = new WaveFileWriter(buffer, input.WaveFormat);
                 input.DataAvailable += (_,e) => { lock (gate) writer?.Write(e.Buffer, 0, e.BytesRecorded); };
                 input.RecordingStopped += (_,e) =>
                 {
                     lock (gate)
                     {
-                        writer?.Dispose(); writer = null;
-                        input?.Dispose(); input = null;
-                        if (e.Exception != null)
+                        try
                         {
-                            try { if (File.Exists(path)) File.Delete(path); } catch (IOException) { }
-                            completion.TrySetException(e.Exception);
+                            writer?.Dispose(); writer = null; // Finalize the WAV header.
+                            input?.Dispose(); input = null;
+                            if (e.Exception != null) completion.TrySetException(e.Exception);
+                            else completion.TrySetResult(buffer!.ToArray());
                         }
-                        else completion.TrySetResult(path!);
+                        catch (Exception error) { completion.TrySetException(error); }
+                        finally { ClearBuffer(); }
                     }
                 };
                 input.StartRecording();
@@ -42,11 +45,19 @@ public sealed class Recorder
             catch
             {
                 writer?.Dispose(); writer = null; input?.Dispose(); input = null;
-                if (File.Exists(path)) File.Delete(path); throw;
+                ClearBuffer(); throw;
             }
         }
     }
-    public Task<string> Stop()
+    private void ClearBuffer()
+    {
+        if (buffer != null)
+        {
+            if (buffer.TryGetBuffer(out var memory)) CryptographicOperations.ZeroMemory(memory.AsSpan());
+            buffer.Dispose(); buffer = null;
+        }
+    }
+    public Task<byte[]> Stop()
     {
         lock (gate)
         {

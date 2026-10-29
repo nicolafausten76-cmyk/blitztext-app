@@ -14,17 +14,17 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: ggml-org/whisper.cpp
           ref: d1be6fde11ac6e0407606b4e42fe72d34add8037
           path: ports/vendor/whisper.cpp
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: "8.0.x"
       - name: Test pure text logic
-        run: dotnet test ports/windows/Sprechklar.Tests/Sprechklar.Tests.csproj -c Release
+        run: dotnet test ports/windows/Sprechklar.Tests/Sprechklar.Tests.csproj -c Release -p:NuGetAudit=true -p:NuGetAuditMode=all '-warnaserror:NU1900,NU1901,NU1902,NU1903,NU1904'
       - name: Build local speech engine
         shell: pwsh
         run: |
@@ -56,41 +56,50 @@ jobs:
           if (-not $app.WaitForExit(20000)) { $app.Kill(); throw "UI startup timed out" }
           if ($app.ExitCode -ne 0 -or -not (Test-Path ports/dist/Sprechklar/smoke-test.ok)) { throw "UI startup failed" }
           Remove-Item -LiteralPath ports/dist/Sprechklar/smoke-test.ok
-      - name: Transcribe the upstream test recording locally
+      - name: Test clipboard privacy markers on the isolated desktop
         shell: pwsh
         run: |
-          $model = Join-Path $env:RUNNER_TEMP "ggml-base.bin"
+          $app = Start-Process -FilePath (Resolve-Path ports/dist/Sprechklar/Sprechklar.exe) -ArgumentList "--security-smoke-test" -WindowStyle Hidden -PassThru
+          if (-not $app.WaitForExit(20000)) { $app.Kill(); throw "Clipboard test timed out" }
+          if ($app.ExitCode -ne 0) { throw "Clipboard privacy markers did not survive the OS round-trip" }
+      - name: Transcribe through the application's actual memory and pipe path
+        shell: pwsh
+        run: |
+          $modelDir = Join-Path $env:LOCALAPPDATA "Sprechklar/models"
+          New-Item -ItemType Directory -Path $modelDir -Force | Out-Null
+          $model = Join-Path $modelDir "ggml-base.bin"
           $ProgressPreference = "SilentlyContinue"
           Invoke-WebRequest "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin" -OutFile $model -TimeoutSec 180
           if ((Get-FileHash -LiteralPath $model -Algorithm SHA1).Hash.ToLowerInvariant() -ne "465707469ff3a37a2b9b8d8f89f2f99de7299dac") { throw "Model checksum mismatch" }
-          & ports/dist/Sprechklar/engine/whisper-cli.exe -m $model -f ports/vendor/whisper.cpp/samples/jfk.wav -l en -otxt -of ports/benchmark-jfk -np
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $text = Get-Content ports/benchmark-jfk.txt -Raw
-          if ($text -notmatch "country") { throw "Expected reference words were not recognized" }
-      - uses: actions/upload-artifact@v4
+          $app = Start-Process -FilePath (Resolve-Path ports/dist/Sprechklar/Sprechklar.exe) -ArgumentList @("--transcription-test", (Resolve-Path ports/vendor/whisper.cpp/samples/jfk.wav).Path) -WindowStyle Hidden -PassThru
+          if (-not $app.WaitForExit(180000)) { $app.Kill(); throw "Memory/pipe transcription timed out" }
+          if ($app.ExitCode -ne 0) { throw "Reference words were not recognized by the memory/pipe path" }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: Sprechklar-Windows-x64-preview
+          name: candidate-windows
           path: ports/dist/Sprechklar/
-          retention-days: 30
+          retention-days: 7
   android:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      signed: ${{ steps.signing.outputs.signed }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: ggml-org/whisper.cpp
           ref: d1be6fde11ac6e0407606b4e42fe72d34add8037
           path: ports/android/vendor/whisper.cpp
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
         with:
           packages: "platform-tools"
           log-accepted-android-sdk-licenses: false
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
         with:
           gradle-version: "8.13"
       - name: Install Android toolchain
@@ -101,11 +110,126 @@ jobs:
           cp ports/licenses/*.txt ports/android/app/src/main/assets/licenses/
           cp ports/THIRD_PARTY_NOTICES.md ports/android/app/src/main/assets/licenses/
           cp ports/android/vendor/whisper.cpp/LICENSE ports/android/app/src/main/assets/licenses/Whisper.txt
-      - name: Build APK and lint
+      - name: Configure private signing when available
+        id: signing
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [[ -n "$KEYSTORE_BASE64" && -n "$STORE_PASSWORD" && -n "$KEY_ALIAS" && -n "$KEY_PASSWORD" ]]; then
+            umask 077
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/sprechklar-release.p12"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          elif [[ -n "$KEYSTORE_BASE64$STORE_PASSWORD$KEY_ALIAS$KEY_PASSWORD" ]]; then
+            echo "::error::Partial Android signing configuration. All four secrets are required."
+            exit 1
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No private signing key configured. Building an UNSIGNED release for validation only; no installable Android package will be published."
+          fi
+      - name: Build release APK, unit tests and lint
         working-directory: ports/android
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
-      - uses: actions/upload-artifact@v4
+        env:
+          SPRECHKLAR_KEYSTORE: ${{ steps.signing.outputs.signed == 'true' && format('{0}/sprechklar-release.p12', runner.temp) || '' }}
+          SPRECHKLAR_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          SPRECHKLAR_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          SPRECHKLAR_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:testReleaseUnitTest :app:assembleRelease :app:lintRelease
+      - name: Verify packaged Android permissions, release flags and signature
+        shell: bash
+        env:
+          SIGNED: ${{ steps.signing.outputs.signed }}
+        run: |
+          set -euo pipefail
+          mkdir -p ports/dist/android
+          if [[ "$SIGNED" == "true" ]]; then
+            apk=ports/android/app/build/outputs/apk/release/app-release.apk
+          else
+            apk=ports/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          fi
+          aapt="$ANDROID_HOME/build-tools/35.0.0/aapt2"
+          "$aapt" dump badging "$apk" > ports/dist/android/android-manifest-check.txt
+          if grep -q 'application-debuggable' ports/dist/android/android-manifest-check.txt; then
+            echo "::error::Packaged APK is debuggable"; exit 1
+          fi
+          "$aapt" dump permissions "$apk" > ports/dist/android/android-permissions.txt
+          python3 ports/scripts/check_android_permissions.py ports/dist/android/android-permissions.txt
+          if [[ "$SIGNED" == "true" ]]; then
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk" > ports/dist/android/android-signature.txt
+            cp "$apk" ports/dist/android/Sprechklar-Android-arm64.apk
+          else
+            cp "$apk" ports/dist/android/Sprechklar-Android-UNSIGNED.apk
+            printf 'UNSIGNED — not installable. Private signing configuration is required.\n' > ports/dist/android/android-signature.txt
+          fi
+          printf 'Source commit: %s\nSigned release: %s\n' "$GITHUB_SHA" "$SIGNED" > ports/dist/android/BUILD-INFO.txt
+      - name: Discard runner-local private key
+        if: always()
+        shell: bash
+        run: |
+          key="$RUNNER_TEMP/sprechklar-release.p12"
+          if [[ -f "$key" ]]; then rm -- "$key"; fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: Sprechklar-Android-arm64-preview
-          path: ports/android/app/build/outputs/apk/debug/app-debug.apk
+          name: candidate-android
+          path: ports/dist/android/
+          retention-days: 7
+  security:
+    name: Scan actual packages and publish checked previews
+    needs: [windows, android]
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: candidate-windows
+          path: checked/windows
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: candidate-android
+          path: checked/android
+      - name: Create file hashes before scanning
+        shell: pwsh
+        run: |
+          foreach ($platform in @("windows","android")) {
+            $root = (Resolve-Path "checked/$platform").Path
+            "Source commit: $env:GITHUB_SHA" | Set-Content -LiteralPath (Join-Path $root "SOURCE-COMMIT.txt")
+            $lines = Get-ChildItem -LiteralPath $root -File -Recurse | Sort-Object FullName | ForEach-Object {
+              $relative = [IO.Path]::GetRelativePath($root,$_.FullName).Replace("\","/")
+              "{0}  {1}" -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(),$relative
+            }
+            $lines | Set-Content -LiteralPath (Join-Path $root "SHA256SUMS.txt") -Encoding utf8
+          }
+      - name: Scan Windows files with Defender
+        shell: pwsh
+        run: ports/scripts/Scan-Windows.ps1 -Target checked/windows -Report reports/windows-defender.txt
+      - name: Scan Android archive with Defender
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: ports/scripts/Scan-Windows.ps1 -Target checked/android -Report reports/android-defender.txt
+      - name: Publish scan evidence even when a scan fails
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Sprechklar-security-reports
+          path: reports/
           retention-days: 30
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Sprechklar-Windows-x64-security-preview
+          path: checked/windows/
+          retention-days: 30
+      - if: ${{ needs.android.outputs.signed == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Sprechklar-Android-arm64-security-preview
+          path: checked/android/
+          retention-days: 30
+      - name: Report remaining Android signing setup
+        if: ${{ needs.android.outputs.signed != 'true' }}
+        shell: pwsh
+        run: |
+          "Android compiled, tested and scanned, but remains UNSIGNED. No installable Android preview published. See ports/docs/SECURITY.md." | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY

@@ -73,3 +73,16 @@ Leistung und Qualität auf 8-GB-Hardware müssen gemessen werden.
 Beliebige Android-Telefon-/VoIP-Aufnahmen werden nicht zugesagt.
 Zuerst Builds und Gerätetests, anschließend offene Originalfunktionen ergänzen.
 Den App-Entwicklungs-Skill aus dem geprüften Ablauf ableiten; noch nicht installiert.
+
+## 0.1.1 — Sicherheitsüberarbeitung (29. Oktober 2026)
+
+Windows: ausdrückliche, einmalige Freigabe vor externem Einfügen; Ablauf nach 60 Sekunden;
+Clipboard-Verlauf-/Cloud-Ausschluss; WAV und Transkript ohne App-Tempdateien über RAM/Pipes.
+Android: Release statt Debug; sensible Clipboard-Markierung; Screenshot-/Vorschaubildschutz;
+privater, wiederverwendbarer Signierschlüssel aus Secrets, kein Debug-Fallback.
+CI: Freigabetests, Clipboard-OS-Test, echte Pipe-Transkription, NuGet-Audit,
+Release-Manifestprüfung, SHA-256-Dateilisten und Defender-Scan als Paketfreigabeschranke.
+
+Der aktuelle tatsächliche Build-/Scanstatus ist im zugehörigen Actions-Lauf zu prüfen.
+Ohne Schlüssel bleibt Android nicht installierbar. Kein vollständiger Schutz vor Prompt Injection,
+kein unabhängiges Binäraudit und weiterhin offene Gerätetests. Details: [SECURITY](SECURITY.md).

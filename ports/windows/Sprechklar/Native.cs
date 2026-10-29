@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Automation;
@@ -36,6 +37,30 @@ internal static class Native
         }
         catch { return null; }
     }
+    internal static DataObject ProtectedText(string text)
+    {
+        var data = new DataObject();
+        data.SetData(DataFormats.UnicodeText, text, false);
+        data.SetData("CanIncludeInClipboardHistory", new MemoryStream(new byte[4]), false);
+        data.SetData("CanUploadToCloudClipboard", new MemoryStream(new byte[4]), false);
+        data.SetData("ExcludeClipboardContentFromMonitorProcessing", new MemoryStream(new byte[] { 1, 0, 0, 0 }), false);
+        return data;
+    }
+    public static void CopyProtected(string text) => Clipboard.SetDataObject(ProtectedText(text), true);
+    public static void ClipboardSmokeTest()
+    {
+        // CI's isolated desktop only; no user clipboard is examined.
+        CopyProtected("Sprechklar security smoke test");
+        if (Clipboard.GetText() != "Sprechklar security smoke test") throw new InvalidOperationException("Clipboard round-trip failed.");
+        foreach (string format in new[] { "CanIncludeInClipboardHistory", "CanUploadToCloudClipboard" })
+        {
+            if (Clipboard.GetData(format) is not MemoryStream stream || stream.ToArray().Length != 4 || BitConverter.ToInt32(stream.ToArray(), 0) != 0)
+                throw new InvalidOperationException("Clipboard exclusion marker missing: " + format);
+        }
+        if (!Clipboard.ContainsData("ExcludeClipboardContentFromMonitorProcessing"))
+            throw new InvalidOperationException("Clipboard monitor exclusion missing.");
+        Clipboard.Clear();
+    }
     public static async Task<bool> Paste(string text, IntPtr target, string? fieldIdentity)
     {
         if (target == IntPtr.Zero || fieldIdentity == null || GetForegroundWindow() != target || IsPassword() || FieldIdentity() != fieldIdentity) return false;
@@ -51,7 +76,7 @@ internal static class Native
                 }
         }
         catch { return false; } // Never overwrite a clipboard we cannot preserve.
-        try { Clipboard.SetText(text); } catch (ExternalException) { return false; }
+        try { CopyProtected(text); } catch (ExternalException) { return false; }
         uint sequence = GetClipboardSequenceNumber();
         bool sent = false;
         try

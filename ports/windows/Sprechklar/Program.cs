@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -16,7 +17,28 @@ internal static class Program
 {
     [STAThread] public static void Main(string[] args)
     {
+        if (args.Length == 2 && args[0] == "--transcription-test")
+        {
+            try
+            {
+                byte[] sample = File.ReadAllBytes(args[1]);
+                try
+                {
+                    string text = Pipeline.Transcribe(sample, new Settings { Language="auto", Dictionary="" }, CancellationToken.None).GetAwaiter().GetResult();
+                    if (!text.Contains("country", StringComparison.OrdinalIgnoreCase)) throw new Exception("Reference transcription failed.");
+                }
+                finally { CryptographicOperations.ZeroMemory(sample); }
+            }
+            catch { Environment.ExitCode=1; }
+            return;
+        }
         var app = new System.Windows.Application();
+        if (args.Length == 1 && args[0] == "--security-smoke-test")
+        {
+            try { Native.ClipboardSmokeTest(); }
+            catch { Environment.ExitCode=1; }
+            return;
+        }
         app.DispatcherUnhandledException += (_,e) => { MessageBox.Show(e.Exception.Message, "Sprechklar"); e.Handled=true; };
         var window = new AppWindow();
         if (args.Length == 1 && args[0] == "--smoke-test")
@@ -28,6 +50,7 @@ public sealed class AppWindow : Window
 {
     readonly Settings config = Storage.Load();
     readonly Recorder recorder = new();
+    readonly OutputReview review = new();
     readonly ComboBox mode = new() { ItemsSource=Core.Modes, SelectedIndex=0 };
     readonly ComboBox model = new() { ItemsSource=new[]{"base","tiny"} };
     readonly ComboBox language = new() { ItemsSource=new[]{"de","auto"} };
@@ -71,13 +94,21 @@ public sealed class AppWindow : Window
         stack.Children.Add(Button("Abbrechen",async()=> await Cancel()));
         stack.Children.Add(new TextBlock { Text="Strg + Umschalt + Leertaste: Start / Stopp in anderen Programmen\nStrg + Alt + Rücktaste: Abbrechen · maximal 5 Minuten je Aufnahme", TextWrapping=TextWrapping.Wrap, Margin=new Thickness(0,12,0,12) });
         Add(stack,"Ergebnis",result);
-        stack.Children.Add(Button("Ergebnis kopieren",()=> { if(result.Text.Length>0) Clipboard.SetText(result.Text); return Task.CompletedTask; }));
+        stack.Children.Add(Button("Ergebnis kopieren",()=> { if(result.Text.Length>0) Native.CopyProtected(result.Text); return Task.CompletedTask; }));
+        stack.Children.Add(Button("Text für ursprüngliches Zielfeld freigeben",()=>
+        {
+            review.Approve(result.Text,target,targetField,DateTimeOffset.UtcNow);
+            status.Text="Text freigegeben für 60 Sekunden. Zum ursprünglichen Feld wechseln und Strg + Alt + Eingabe drücken. Änderungen widerrufen die Freigabe.";
+            return Task.CompletedTask;
+        }));
+        result.TextChanged+=(_,_)=>review.Invalidate();
+        stack.Children.Add(new TextBlock { Text="Ergebnis vor dem Kopieren oder Einfügen prüfen. Auch lokale KI kann Fakten ändern oder eingesprochene Anweisungen befolgen. Keine ungeprüften Befehle in ein Terminal einfügen.",TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,8,0,8) });
         stack.Children.Add(Button("Verlauf ansehen",()=> { ShowHistory(); return Task.CompletedTask; }));
         stack.Children.Add(Button("Im Hintergrund weiterlaufen",()=> { Save(); Hide(); return Task.CompletedTask; }));
         stack.Children.Add(status);
         SourceInitialized+=(_,_)=>InitNative();
         Closing+=(_,e)=> { if(recording||busy){e.Cancel=true;status.Text="Bitte zuerst abbrechen und den Abschluss abwarten.";return;} Save(); };
-        Closed+=(_,_)=> { limit.Stop(); Native.UnregisterHotKey(handle,1);Native.UnregisterHotKey(handle,2);source?.RemoveHook(Hook);tray?.Dispose();operation?.Dispose(); };
+        Closed+=(_,_)=> { limit.Stop(); Native.UnregisterHotKey(handle,1);Native.UnregisterHotKey(handle,2);Native.UnregisterHotKey(handle,3);source?.RemoveHook(Hook);tray?.Dispose();operation?.Dispose(); };
         limit.Tick+=async(_,_)=> { if(recording && elapsed.Elapsed.TotalMinutes>=5) await Toggle(IntPtr.Zero); };
     }
     static void Add(Panel panel,string label,Control control)
@@ -103,7 +134,8 @@ public sealed class AppWindow : Window
         handle=new WindowInteropHelper(this).Handle;source=HwndSource.FromHwnd(handle);source.AddHook(Hook);
         hotkeys=Native.RegisterHotKey(handle,1,0x4006,0x20);
         bool cancelHotkey=Native.RegisterHotKey(handle,2,0x4003,0x08);
-        if(!hotkeys || !cancelHotkey) status.Text="Tastenkürzel belegt. Aufnahme über den Button möglich.";
+        bool insertHotkey=Native.RegisterHotKey(handle,3,0x4003,0x0D);
+        if(!hotkeys || !cancelHotkey || !insertHotkey) status.Text="Tastenkürzel belegt. Aufnahme über den Button möglich.";
         tray=new Forms.NotifyIcon { Icon=System.Drawing.SystemIcons.Application,Text="Sprechklar",Visible=true };
         var menu=new Forms.ContextMenuStrip();
         menu.Items.Add("Öffnen",null,(_,_)=>Dispatcher.Invoke(()=>{Show();Activate();}));
@@ -118,6 +150,7 @@ public sealed class AppWindow : Window
             handled=true;
             if(wParam.ToInt32()==1) Dispatcher.InvokeAsync(async()=>await Toggle(Native.GetForegroundWindow()));
             if(wParam.ToInt32()==2) Dispatcher.InvokeAsync(async()=>await Cancel());
+            if(wParam.ToInt32()==3) Dispatcher.InvokeAsync(async()=>await InsertApproved());
         }
         return IntPtr.Zero;
     }
@@ -137,6 +170,7 @@ public sealed class AppWindow : Window
         {
             try
             {
+                review.Invalidate();
                 Save();
                 if(!File.Exists(Pipeline.Engine)||!File.Exists(Storage.ModelPath(config.Model)))throw new IOException("Engine oder Sprachmodell fehlt. Bitte Einrichtung abschließen.");
                 if(device.Items.Count==0)throw new IOException("Kein Mikrofon gefunden.");
@@ -151,7 +185,7 @@ public sealed class AppWindow : Window
             return;
         }
         recording=false;busy=true;limit.Stop();elapsed.Stop();recordButton.Content="Aufnahme starten";
-        operation=new();string? wav=null;int selectedMode=mode.SelectedIndex;
+        operation=new();byte[]? wav=null;int selectedMode=mode.SelectedIndex;
         try
         {
             status.Text="Lokale Spracherkennung …";
@@ -164,8 +198,9 @@ public sealed class AppWindow : Window
             catch(OperationCanceledException){throw;}
             catch(Exception e){status.Text=e.Message;return;}
             operation.Token.ThrowIfCancellationRequested();result.Text=text;
-            bool pasted=await Native.Paste(text,target,targetField);
-            status.Text=pasted?"Einfügen ausgelöst. Ergebnis bleibt hier verfügbar.":"Fertig. Ergebnis hier kopieren; Zielfenster war nicht mehr aktiv.";
+            review.Invalidate();
+            status.Text=target==IntPtr.Zero?"Fertig. Text prüfen und bei Bedarf kopieren.":"Fertig. Text prüfen und ausdrücklich freigeben; anschließend im ursprünglichen Feld Strg + Alt + Eingabe.";
+            Show(); Activate();
             if(config.SaveHistory)
             {
                 try{Storage.AddHistory(new(DateTimeOffset.Now,Core.Modes[selectedMode],text));}
@@ -176,21 +211,36 @@ public sealed class AppWindow : Window
         catch(Exception e){status.Text=e.Message;}
         finally
         {
-            if(wav!=null && File.Exists(wav))File.Delete(wav);
+            if(wav!=null) CryptographicOperations.ZeroMemory(wav);
             busy=false;operation?.Dispose();operation=null;
             mode.IsEnabled=model.IsEnabled=language.IsEnabled=device.IsEnabled=true;
         }
     }
     async Task Cancel()
     {
+        review.Invalidate();
         if(recording)
         {
             recording=false;busy=true;limit.Stop();elapsed.Stop();
-            try { string wav=await recorder.Stop();if(File.Exists(wav))File.Delete(wav);status.Text="Aufnahme verworfen."; }
+            try { byte[] wav=await recorder.Stop();CryptographicOperations.ZeroMemory(wav);status.Text="Aufnahme verworfen."; }
             catch(Exception e){status.Text=e.Message;}
             finally{busy=false;recordButton.Content="Aufnahme starten";mode.IsEnabled=model.IsEnabled=language.IsEnabled=device.IsEnabled=true;}
         }
         else operation?.Cancel();
+    }
+    async Task InsertApproved()
+    {
+        if(recording||busy) return;
+        var value=review.Take(result.Text,DateTimeOffset.UtcNow);
+        if(value==null){status.Text="Keine gültige Freigabe. Ergebnis zuerst in Sprechklar prüfen und freigeben.";return;}
+        busy=true;
+        try
+        {
+            bool pasted=await Native.Paste(value.Text,value.Target,value.Field);
+            status.Text=pasted?"Freigegebenen Text eingefügt; Annahme im Zielprogramm prüfen.":"Zielfeld geändert oder nicht aktiv. Erneute Prüfung und Freigabe nötig.";
+        }
+        catch(Exception e){status.Text=e.Message;}
+        finally{busy=false;}
     }
     void ShowHistory()
     {

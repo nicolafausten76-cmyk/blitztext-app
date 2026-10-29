@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using NAudio.Wave;
@@ -47,11 +48,11 @@ public static class Pipeline
         }
         finally { if (File.Exists(tmp)) File.Delete(tmp); }
     }
-    public static async Task<string> Transcribe(string wav, Settings config, CancellationToken ct)
+    public static async Task<string> Transcribe(byte[] wav, Settings config, CancellationToken ct)
     {
         if (!File.Exists(Engine)) throw new IOException("Spracherkennungs-Engine fehlt im Unterordner engine.");
         if (!File.Exists(Storage.ModelPath(config.Model))) throw new IOException("Bitte zuerst das Sprachmodell laden.");
-        using (var reader = new WaveFileReader(wav))
+        using (var reader = new WaveFileReader(new MemoryStream(wav, false)))
         {
             if (reader.TotalTime.TotalSeconds < 0.3) return "";
             if (reader.WaveFormat.SampleRate != 16000 || reader.WaveFormat.Channels != 1 || reader.WaveFormat.BitsPerSample != 16) throw new IOException("Ungültiges Aufnahmeformat.");
@@ -61,21 +62,36 @@ public static class Pipeline
             if (sampleCount == 0 || Math.Sqrt(energy/sampleCount) < 0.001) return "";
             if (reader.TotalTime.TotalMinutes > 5) throw new IOException("Diese erste Version verarbeitet maximal fünf Minuten pro Aufnahme.");
         }
-        string output = Path.Combine(Path.GetTempPath(), "sprechklart-result-" + Guid.NewGuid());
-        var psi = new ProcessStartInfo(Engine) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true };
-        foreach (string arg in new[] { "-m", Storage.ModelPath(config.Model), "-f", wav, "-l", config.Language == "auto" ? "auto" : "de", "-t", "4", "-otxt", "-of", output, "-np" }) psi.ArgumentList.Add(arg);
+        var psi = new ProcessStartInfo(Engine)
+        {
+            UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardInput = true, RedirectStandardError = true, RedirectStandardOutput = true,
+            StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
+        };
+        foreach (string arg in new[] { "-m", Storage.ModelPath(config.Model), "-f", "-", "-l",
+            config.Language == "auto" ? "auto" : "de", "-t", "4", "-nt", "-np" }) psi.ArgumentList.Add(arg);
+        using var process = Process.Start(psi) ?? throw new IOException("Engine konnte nicht starten.");
+        using var registration = ct.Register(() => { try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { } });
+        Task<string> stderr = process.StandardError.ReadToEndAsync();
+        Task<string> stdout = process.StandardOutput.ReadToEndAsync();
         try
         {
-            using var process = Process.Start(psi) ?? throw new IOException("Engine konnte nicht starten.");
-            using var registration = ct.Register(() => { try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { } });
-            Task<string> stderr = process.StandardError.ReadToEndAsync();
-            Task<string> stdout = process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync(ct); await stdout; await stderr;
+            await process.StandardInput.BaseStream.WriteAsync(wav, ct);
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(ct);
+            string transcript = await stdout;
+            await stderr;
             ct.ThrowIfCancellationRequested();
-            if (process.ExitCode != 0) throw new IOException("Lokale Spracherkennung fehlgeschlagen. Engine oder Modell prüfen. Exit-Code: " + process.ExitCode);
-            return Core.ReplaceTerms(Core.Clean(await File.ReadAllTextAsync(output + ".txt", ct)), config.Dictionary);
+            if (process.ExitCode != 0) throw new IOException("Lokale Spracherkennung fehlgeschlagen. Exit-Code: " + process.ExitCode);
+            return Core.ReplaceTerms(Core.Clean(transcript), config.Dictionary);
         }
-        finally { if (File.Exists(output + ".txt")) File.Delete(output + ".txt"); }
+        finally
+        {
+            // Includes pipe failures and cancellation: never leave a speech engine running.
+            try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { }
+            await process.WaitForExitAsync();
+            await Task.WhenAll(stdout, stderr);
+        }
     }
     public static async Task<string> Rewrite(string text, int mode, Settings config, CancellationToken ct)
     {

@@ -10,8 +10,8 @@ android {
         applicationId = "de.nicola.sprechklart"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild {
             cmake {
@@ -20,7 +20,27 @@ android {
             }
         }
     }
-    buildTypes { release { isMinifyEnabled = false } }
+    val keyPath = System.getenv("SPRECHKLAR_KEYSTORE")
+    val keyStorePassword = System.getenv("SPRECHKLAR_STORE_PASSWORD")
+    val keyAliasValue = System.getenv("SPRECHKLAR_KEY_ALIAS")
+    val keyPasswordValue = System.getenv("SPRECHKLAR_KEY_PASSWORD")
+    val hasSigningKey = listOf(keyPath, keyStorePassword, keyAliasValue, keyPasswordValue).all { !it.isNullOrBlank() }
+    signingConfigs {
+        if (hasSigningKey) create("privateRelease") {
+            storeFile = file(keyPath!!)
+            storePassword = keyStorePassword
+            keyAlias = keyAliasValue
+            keyPassword = keyPasswordValue
+        }
+    }
+    buildTypes {
+        release {
+            isDebuggable = false
+            isJniDebuggable = false
+            isMinifyEnabled = false
+            if (hasSigningKey) signingConfig = signingConfigs.getByName("privateRelease")
+        }
+    }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }

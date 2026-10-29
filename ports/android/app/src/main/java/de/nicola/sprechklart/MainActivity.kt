@@ -3,6 +3,9 @@ package de.nicola.sprechklart
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
+import android.os.PersistableBundle
+import android.view.WindowManager
+import android.content.ClipDescription
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -32,6 +35,7 @@ class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("settings", Context.MODE_PRIVATE) }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 28, 28, 28) }
         val scroll = ScrollView(this).apply { addView(layout) }
         scroll.setOnApplyWindowInsetsListener { view, insets ->
@@ -43,7 +47,7 @@ class MainActivity : Activity() {
         }
         setContentView(scroll)
         layout.addView(TextView(this).apply { text = "Sprechklar"; textSize = 30f })
-        layout.addView(TextView(this).apply { text = "Lokale Spracheingabe · Vorschau 0.1\nKeine API-Gebühren. Keine Audio-Uploads.\nMaximal 90 Sekunden je Aufnahme."; textSize = 16f })
+        layout.addView(TextView(this).apply { text = "Lokale Spracheingabe · Vorschau 0.1.1\nKeine API-Gebühren. Keine Audio-Uploads.\nMaximal 90 Sekunden je Aufnahme."; textSize = 16f })
         model = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, arrayOf("base", "tiny"))
             setSelection(if (prefs.getString("model", "base") == "tiny") 1 else 0)
@@ -64,7 +68,11 @@ class MainActivity : Activity() {
         output = EditText(this).apply { hint = "Dein Transkript"; minLines = 5; setSingleLine(false); setText(LastResult.text) }
         layout.addView(output)
         addButton(layout, "Text kopieren") {
-            (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Sprechklar", output.text.toString()))
+            val clip = ClipData.newPlainText("Sprechklar", output.text.toString())
+            clip.description.extras = PersistableBundle().apply {
+                putBoolean(if (Build.VERSION.SDK_INT >= 33) ClipDescription.EXTRA_IS_SENSITIVE else "android.content.extra.IS_SENSITIVE", true)
+            }
+            (getSystemService(CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(clip)
             status.text = "Text kopiert."
         }
         addButton(layout, "Text verwerfen") { output.setText(""); LastResult.text = "" }
