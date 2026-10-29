@@ -32,6 +32,21 @@ Keine Daten aus der Wissens-Vault oder Zugangsdaten in den öffentlichen Quellco
 
 Quellcode ist bis zum Build und Gerätetest keine bestätigte Produkteigenschaft.
 
+## Verifizierter Build-Stand
+
+Code-Commit: f5b58e3e1897e81caa85c6605db4d1e42d2fedb0.
+[Prüflauf vom 29. Oktober 2026](https://github.com/nicolafausten76-cmyk/blitztext-app/actions/runs/40861319751):
+Windows und Android erfolgreich. Windows: sieben Textlogik-Tests, CLI-Start,
+WPF-Oberflächenstart und lokale Transkription der öffentlichen JFK-Testaufnahme.
+Android: Unit-Tests, ARM64-APK-Build und Lint erfolgreich.
+Das ist kein Mikrofon-, Geschwindigkeits- oder Eingabetest auf den Nutzergeräten.
+
+- [Windows-ZIP](https://github.com/nicolafausten76-cmyk/blitztext-app/actions/runs/40861319751/artifacts/12892166049)
+- [Android-APK im ZIP](https://github.com/nicolafausten76-cmyk/blitztext-app/actions/runs/40861319751/artifacts/12892355187)
+
+GitHub-Anmeldung für Downloads nötig; Artifacts laufen nach 30 Tagen ab.
+Reproduzierbarer Quellcode bleibt im Repository.
+
 ## Abnahme des Kernablaufs
 
 - Modell laden, Internet trennen, deutsch diktieren.
