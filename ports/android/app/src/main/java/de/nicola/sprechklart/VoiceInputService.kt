@@ -33,14 +33,7 @@ class VoiceInputService : InputMethodService() {
         } })
         return panel
     }
-    private fun password(info: EditorInfo?): Boolean {
-        val type = info?.inputType ?: return true
-        val cls = type and InputType.TYPE_MASK_CLASS
-        val variation = type and InputType.TYPE_MASK_VARIATION
-        return type == InputType.TYPE_NULL ||
-            (cls == InputType.TYPE_CLASS_TEXT && variation in listOf(InputType.TYPE_TEXT_VARIATION_PASSWORD, InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD, InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD)) ||
-            (cls == InputType.TYPE_CLASS_NUMBER && variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD)
-    }
+    private fun password(info: EditorInfo?): Boolean = FieldPolicy.isPassword(info?.inputType)
     override fun onStartInput(info: EditorInfo?, restarting: Boolean) {
         super.onStartInput(info, restarting)
         generation++

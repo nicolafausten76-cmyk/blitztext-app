@@ -48,6 +48,23 @@ jobs:
         run: |
           & ports/dist/Sprechklar/engine/whisper-cli.exe --help
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Start the Windows UI without recording
+        shell: pwsh
+        run: |
+          $app = Start-Process -FilePath (Resolve-Path ports/dist/Sprechklar/Sprechklar.exe) -ArgumentList "--smoke-test" -WindowStyle Hidden -PassThru
+          if (-not $app.WaitForExit(20000)) { $app.Kill(); throw "UI startup timed out" }
+          if ($app.ExitCode -ne 0 -or -not (Test-Path ports/dist/Sprechklar/smoke-test.ok)) { throw "UI startup failed" }
+          Remove-Item -LiteralPath ports/dist/Sprechklar/smoke-test.ok
+      - name: Transcribe the upstream test recording locally
+        shell: pwsh
+        run: |
+          $model = Join-Path $env:RUNNER_TEMP "ggml-base.bin"
+          Invoke-WebRequest "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin" -OutFile $model
+          if ((Get-FileHash -LiteralPath $model -Algorithm SHA1).Hash.ToLowerInvariant() -ne "465707469ff3a37a2b9b8d8f89f2f99de7299dac") { throw "Model checksum mismatch" }
+          & ports/dist/Sprechklar/engine/whisper-cli.exe -m $model -f ports/vendor/whisper.cpp/samples/jfk.wav -l en -otxt -of ports/benchmark-jfk -np
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $text = Get-Content ports/benchmark-jfk.txt -Raw
+          if ($text -notmatch "country") { throw "Expected reference words were not recognized" }
       - uses: actions/upload-artifact@v4
         with:
           name: Sprechklar-Windows-x64-preview
@@ -78,7 +95,7 @@ jobs:
         run: sdkmanager "platforms;android-36" "build-tools;35.0.0" "ndk;28.2.13676358" "cmake;3.22.1"
       - name: Build APK and lint
         working-directory: ports/android
-        run: gradle --no-daemon :app:assembleDebug :app:lintDebug
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
       - uses: actions/upload-artifact@v4
         with:
           name: Sprechklar-Android-arm64-preview

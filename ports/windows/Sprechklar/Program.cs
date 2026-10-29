@@ -14,11 +14,14 @@ namespace Sprechklar;
 
 internal static class Program
 {
-    [STAThread] public static void Main()
+    [STAThread] public static void Main(string[] args)
     {
         var app = new System.Windows.Application();
         app.DispatcherUnhandledException += (_,e) => { MessageBox.Show(e.Exception.Message, "Sprechklar"); e.Handled=true; };
-        app.Run(new AppWindow());
+        var window = new AppWindow();
+        if (args.Length == 1 && args[0] == "--smoke-test")
+            window.Loaded += (_,_) => { File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "smoke-test.ok"), "OK"); window.Close(); };
+        app.Run(window);
     }
 }
 public sealed class AppWindow : Window
