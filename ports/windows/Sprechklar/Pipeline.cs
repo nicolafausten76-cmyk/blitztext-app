@@ -68,8 +68,11 @@ public static class Pipeline
             RedirectStandardInput = true, RedirectStandardError = true, RedirectStandardOutput = true,
             StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
         };
+        // With stdin ("-"), this pinned CLI also defaults its output basename to "-".
+        // That suppresses segment callbacks. A non-stdout basename enables stdout callbacks;
+        // no output-file flags are set, so no transcript files are created.
         foreach (string arg in new[] { "-m", Storage.ModelPath(config.Model), "-f", "-", "-l",
-            config.Language == "auto" ? "auto" : "de", "-t", "4", "-nt", "-np" }) psi.ArgumentList.Add(arg);
+            config.Language == "auto" ? "auto" : "de", "-t", "4", "-nt", "-np", "-of", "sprechklar-memory" }) psi.ArgumentList.Add(arg);
         using var process = Process.Start(psi) ?? throw new IOException("Engine konnte nicht starten.");
         using var registration = ct.Register(() => { try { if (!process.HasExited) process.Kill(true); } catch (InvalidOperationException) { } });
         Task<string> stderr = process.StandardError.ReadToEndAsync();

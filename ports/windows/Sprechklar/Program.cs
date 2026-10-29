@@ -25,11 +25,12 @@ internal static class Program
                 try
                 {
                     string text = Pipeline.Transcribe(sample, new Settings { Language="auto", Dictionary="" }, CancellationToken.None).GetAwaiter().GetResult();
+                    Console.WriteLine("Public reference transcription: " + text);
                     if (!text.Contains("country", StringComparison.OrdinalIgnoreCase)) throw new Exception("Reference transcription failed.");
                 }
                 finally { CryptographicOperations.ZeroMemory(sample); }
             }
-            catch { Environment.ExitCode=1; }
+            catch (Exception error) { Console.Error.WriteLine(error); Environment.ExitCode=1; }
             return;
         }
         var app = new System.Windows.Application();
