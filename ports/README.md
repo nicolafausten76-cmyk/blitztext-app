@@ -19,7 +19,7 @@ Zum Download ist eine GitHub-Anmeldung nötig. Build-Erfolg ersetzt keinen Gerä
    **Strg+Umschalt+Leertaste** startet und stoppt die Aufnahme.
 7. **Strg+Umschalt+Esc** bricht ab. Maximal fünf Minuten je Aufnahme.
 
-Bei einem Wechsel des Zielfensters wird nicht blind eingefügt. Das Ergebnis kann
+Bei einem Wechsel des Zielfensters oder des über UI Automation erkannten Eingabefelds wird nicht blind eingefügt. Das Ergebnis kann
 in Sprechklar kopiert werden. Die Zwischenablage wird nach einer Karenzzeit
 wiederhergestellt, wenn inzwischen niemand etwas anderes kopiert hat.
 Windows bestätigt nicht, ob das Zielprogramm den Text angenommen hat.
@@ -27,7 +27,7 @@ Erhöhte Programme, Passwortfelder, Remote-Sitzungen und langsame Zwischenablage
 müssen gesondert auf dem Gerät getestet werden.
 
 Für die drei Schreibmodi: Ollama separat installieren, ein kleines mehrsprachiges
-Textmodell laden und dessen Modellnamen eintragen. Nur 127.0.0.1:11434 wird angesprochen.
+Textmodell laden, Ollama im lokalen Modus (OLLAMA_NO_CLOUD=1) betreiben und dessen Modellnamen eintragen. Nur 127.0.0.1:11434 wird angesprochen.
 Bei Ausfall bleibt das wortgetreue Transkript erhalten; kein Cloud-Fallback.
 
 Verlauf ist standardmäßig aus. Optional werden maximal 100 Ergebnisse mit

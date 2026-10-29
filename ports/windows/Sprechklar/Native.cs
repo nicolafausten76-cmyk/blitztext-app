@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Automation;
 namespace Sprechklar;
 
 internal static class Native
@@ -20,9 +21,24 @@ internal static class Native
     [StructLayout(LayoutKind.Sequential)] private struct KEYBOARD { public ushort vk, scan; public uint flags, time; public IntPtr extra; }
     [StructLayout(LayoutKind.Sequential)] private struct MOUSE { public int x,y; public uint data,flags,time; public IntPtr extra; }
     private static INPUT Key(ushort key, bool up=false) => new() { type=1, data=new UNION { key=new KEYBOARD { vk=key, flags=up?2u:0u } } };
-    public static async Task<bool> Paste(string text, IntPtr target)
+    public static bool IsPassword()
     {
-        if (target == IntPtr.Zero || GetForegroundWindow() != target) return false;
+        try { return AutomationElement.FocusedElement?.Current.IsPassword == true; }
+        catch { return true; }
+    }
+    public static string? FieldIdentity()
+    {
+        try
+        {
+            var field = AutomationElement.FocusedElement;
+            if (field == null || field.Current.IsPassword || !field.Current.HasKeyboardFocus) return null;
+            return string.Join(",", field.GetRuntimeId());
+        }
+        catch { return null; }
+    }
+    public static async Task<bool> Paste(string text, IntPtr target, string? fieldIdentity)
+    {
+        if (target == IntPtr.Zero || fieldIdentity == null || GetForegroundWindow() != target || IsPassword() || FieldIdentity() != fieldIdentity) return false;
         var snapshot = new DataObject();
         try
         {
@@ -40,7 +56,7 @@ internal static class Native
         bool sent = false;
         try
         {
-            if (GetForegroundWindow() != target) return false;
+            if (GetForegroundWindow() != target || IsPassword() || FieldIdentity() != fieldIdentity) return false;
             var keys = new[] { Key(0x11), Key(0x56), Key(0x56,true), Key(0x11,true) };
             sent = SendInput(4, keys, Marshal.SizeOf<INPUT>()) == 4;
             return sent; // OS accepted input; destination acceptance still needs device testing.

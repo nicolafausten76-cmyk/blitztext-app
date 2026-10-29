@@ -54,6 +54,11 @@ public static class Pipeline
         using (var reader = new WaveFileReader(wav))
         {
             if (reader.TotalTime.TotalSeconds < 0.3) return "";
+            if (reader.WaveFormat.SampleRate != 16000 || reader.WaveFormat.Channels != 1 || reader.WaveFormat.BitsPerSample != 16) throw new IOException("Ungültiges Aufnahmeformat.");
+            byte[] pcm = new byte[8192]; int n; double energy = 0; long sampleCount = 0;
+            while ((n = reader.Read(pcm, 0, pcm.Length)) > 0)
+                for (int i=0; i+1<n; i+=2) { double s=(short)(pcm[i] | pcm[i+1]<<8)/32768.0; energy+=s*s; sampleCount++; }
+            if (sampleCount == 0 || Math.Sqrt(energy/sampleCount) < 0.001) return "";
             if (reader.TotalTime.TotalMinutes > 5) throw new IOException("Diese erste Version verarbeitet maximal fünf Minuten pro Aufnahme.");
         }
         string output = Path.Combine(Path.GetTempPath(), "sprechklart-result-" + Guid.NewGuid());
@@ -76,7 +81,17 @@ public static class Pipeline
     {
         if (mode == 0 || text.Length == 0) return text;
         if (string.IsNullOrWhiteSpace(config.OllamaModel)) throw new InvalidOperationException("Für Schreibmodi ein installiertes Ollama-Modell eintragen. Das wortgetreue Transkript bleibt erhalten.");
-        using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+        if (config.OllamaModel.Contains("cloud", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Bitte ein lokales Ollama-Modell wählen. Cloud-Modelle sind hier gesperrt.");
+        using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+        using var client = new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(5) };
+        using (var info = await client.PostAsJsonAsync("http://127.0.0.1:11434/api/show", new { model = config.OllamaModel.Trim() }, ct))
+        {
+            info.EnsureSuccessStatusCode();
+            using var metadata = JsonDocument.Parse(await info.Content.ReadAsStringAsync(ct));
+            foreach (string name in new[] { "remote_model", "remote_host" })
+                if (metadata.RootElement.TryGetProperty(name, out var remote) && remote.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(remote.GetString()))
+                    throw new InvalidOperationException("Dieses Ollama-Modell wird extern ausgeführt. Bitte lokales Modell wählen.");
+        }
         using var response = await client.PostAsJsonAsync("http://127.0.0.1:11434/api/chat", new
         {
             model = config.OllamaModel.Trim(), stream = false,

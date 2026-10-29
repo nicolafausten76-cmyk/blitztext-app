@@ -40,6 +40,7 @@ public sealed class AppWindow : Window
     Forms.NotifyIcon? tray;
     HwndSource? source;
     IntPtr handle, target;
+    string? targetField;
     CancellationTokenSource? operation;
     bool recording, busy, hotkeys;
     public AppWindow()
@@ -89,6 +90,7 @@ public sealed class AppWindow : Window
     }
     void Save()
     {
+        if(recording || busy) return;
         config.Model=model.SelectedItem?.ToString()??"base";config.Language=language.SelectedItem?.ToString()??"de";
         config.Device=Math.Max(0,device.SelectedIndex);config.Dictionary=dictionary.Text;
         config.OllamaModel=ollama.Text;config.SaveHistory=history.IsChecked==true;Storage.Save(config);
@@ -136,6 +138,8 @@ public sealed class AppWindow : Window
                 if(!File.Exists(Pipeline.Engine)||!File.Exists(Storage.ModelPath(config.Model)))throw new IOException("Engine oder Sprachmodell fehlt. Bitte Einrichtung abschließen.");
                 if(device.Items.Count==0)throw new IOException("Kein Mikrofon gefunden.");
                 target=foreground==handle?IntPtr.Zero:foreground;
+                if(target!=IntPtr.Zero && Native.IsPassword()) throw new InvalidOperationException("Keine Spracheingabe in Passwortfeldern.");
+                targetField=target==IntPtr.Zero?null:Native.FieldIdentity();
                 recorder.Start(config.Device);recording=true;elapsed.Restart();limit.Start();
                 recordButton.Content="Aufnahme stoppen";status.Text="Aufnahme läuft …";
                 mode.IsEnabled=model.IsEnabled=language.IsEnabled=device.IsEnabled=false;
@@ -157,7 +161,7 @@ public sealed class AppWindow : Window
             catch(OperationCanceledException){throw;}
             catch(Exception e){status.Text=e.Message;return;}
             operation.Token.ThrowIfCancellationRequested();result.Text=text;
-            bool pasted=await Native.Paste(text,target);
+            bool pasted=await Native.Paste(text,target,targetField);
             status.Text=pasted?"Einfügen ausgelöst. Ergebnis bleibt hier verfügbar.":"Fertig. Ergebnis hier kopieren; Zielfenster war nicht mehr aktiv.";
             if(config.SaveHistory)
             {
