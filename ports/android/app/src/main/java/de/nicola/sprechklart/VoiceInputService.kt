@@ -20,13 +20,14 @@ class VoiceInputService : InputMethodService() {
     private var recording: Recording? = null
     private var busy = false
     private var generation = 0
+    private var discardToken: Int? = null
     private val ui = Handler(Looper.getMainLooper())
     private val executor = Executors.newSingleThreadExecutor()
     override fun onCreateInputView(): View {
         val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 16, 24, 16) }
         status = TextView(this).apply { text = "Sprechklar · offline"; textSize = 17f }; panel.addView(status)
         mic = Button(this).apply { text = "Diktieren"; setOnClickListener { try { toggle() } catch (e: Exception) { status.text = e.message } } }; panel.addView(mic)
-        panel.addView(Button(this).apply { text = "Abbrechen"; setOnClickListener { cancel() } })
+        panel.addView(Button(this).apply { text = "Abbrechen"; setOnClickListener { cancel(discardResult = true) } })
         panel.addView(Button(this).apply { text = "Andere Tastatur"; setOnClickListener { switchToNextInputMethod(false) } })
         panel.addView(Button(this).apply { text = "Sprechklar öffnen / Ergebnis ansehen"; setOnClickListener {
             startActivity(Intent(this@VoiceInputService, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -71,6 +72,7 @@ class VoiceInputService : InputMethodService() {
                     val text = Engine.transcribe(applicationContext, samples)
                     ui.post {
                         // Never read surrounding text; never commit to a changed or hidden field.
+                        if (discardToken == token) return@post
                         LastResult.text = text
                         if (token == generation && isInputViewShown && !password(currentInputEditorInfo) && currentInputConnection === connection && text.isNotBlank()) {
                             val accepted = connection?.commitText(text, 1) == true
@@ -90,7 +92,7 @@ class VoiceInputService : InputMethodService() {
         recording = null
         if (::mic.isInitialized) mic.text = "Diktieren"
     }
-    private fun cancel() { generation++; cancelRecording(); if (::status.isInitialized) status.text = "Aufnahme / Einfügen verworfen." }
+    private fun cancel(discardResult: Boolean = false) { if (discardResult) discardToken = generation; generation++; cancelRecording(); if (::status.isInitialized) status.text = "Aufnahme / Einfügen verworfen." }
     override fun onFinishInputView(finishingInput: Boolean) { cancel(); super.onFinishInputView(finishingInput) }
     override fun onFinishInput() { cancel(); super.onFinishInput() }
     override fun onDestroy() { cancel(); executor.shutdownNow(); super.onDestroy() }

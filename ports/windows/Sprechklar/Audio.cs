@@ -29,7 +29,11 @@ public sealed class Recorder
                     {
                         writer?.Dispose(); writer = null;
                         input?.Dispose(); input = null;
-                        if (e.Exception != null) completion.TrySetException(e.Exception);
+                        if (e.Exception != null)
+                        {
+                            try { if (File.Exists(path)) File.Delete(path); } catch (IOException) { }
+                            completion.TrySetException(e.Exception);
+                        }
                         else completion.TrySetResult(path!);
                     }
                 };
@@ -46,8 +50,8 @@ public sealed class Recorder
     {
         lock (gate)
         {
-            if (input == null || completion == null) throw new InvalidOperationException("Keine Aufnahme aktiv.");
-            input.StopRecording(); return completion.Task;
+            if (completion == null) throw new InvalidOperationException("Keine Aufnahme aktiv.");
+            input?.StopRecording(); return completion.Task;
         }
     }
 }

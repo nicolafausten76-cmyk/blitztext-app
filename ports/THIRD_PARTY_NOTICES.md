@@ -11,6 +11,5 @@ Dependencies:
 - whisper.cpp v1.9.5 and ggml: MIT
 - Converted OpenAI Whisper weights: https://huggingface.co/ggerganov/whisper.cpp
 
-The Windows artifact includes the engine license.
-Collect all packaged dependency license texts before a public release.
-This preview is not a completed redistribution-license audit.
+Artifacts include the dependency license texts from ports/licenses and the
+pinned whisper.cpp/ggml licenses. Full release-distribution review remains separate.
