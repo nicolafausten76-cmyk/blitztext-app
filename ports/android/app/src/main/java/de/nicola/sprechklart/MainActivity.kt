@@ -112,7 +112,7 @@ class MainActivity : Activity() {
             save()
             if (!ModelStore.path(this, model.selectedItem.toString()).exists()) { status.text = "Bitte zuerst Sprachmodell laden."; return }
             lateinit var next: Recording
-            next = Recording { runOnUiThread { if (recording === next) toggle() } }
+            next = Recording { runOnUiThread { if (recording === next) { try { toggle() } catch (e: Exception) { status.text = e.message } } } }
             next.start(); recording = next
             recordButton.text = "Aufnahme stoppen"; status.text = "Aufnahme läuft …"
         } else {

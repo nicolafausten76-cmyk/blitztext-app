@@ -17,7 +17,7 @@ Zum Download ist eine GitHub-Anmeldung nötig. Build-Erfolg ersetzt keinen Gerä
 5. Aufnehmen, sprechen, stoppen. Text erscheint in der App.
 6. Für andere Programme: **Im Hintergrund weiterlaufen**, ins Zieltextfeld klicken,
    **Strg+Umschalt+Leertaste** startet und stoppt die Aufnahme.
-7. **Strg+Umschalt+Esc** bricht ab. Maximal fünf Minuten je Aufnahme.
+7. **Strg+Alt+Rücktaste** bricht ab. Maximal fünf Minuten je Aufnahme.
 
 Bei einem Wechsel des Zielfensters oder des über UI Automation erkannten Eingabefelds wird nicht blind eingefügt. Das Ergebnis kann
 in Sprechklar kopiert werden. Die Zwischenablage wird nach einer Karenzzeit

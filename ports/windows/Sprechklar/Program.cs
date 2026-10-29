@@ -69,7 +69,7 @@ public sealed class AppWindow : Window
         recordButton.Click+=async(_,_)=> await Toggle(IntPtr.Zero);
         stack.Children.Add(recordButton);
         stack.Children.Add(Button("Abbrechen",async()=> await Cancel()));
-        stack.Children.Add(new TextBlock { Text="Strg + Umschalt + Leertaste: Start / Stopp in anderen Programmen\nStrg + Umschalt + Esc: Abbrechen · maximal 5 Minuten je Aufnahme", TextWrapping=TextWrapping.Wrap, Margin=new Thickness(0,12,0,12) });
+        stack.Children.Add(new TextBlock { Text="Strg + Umschalt + Leertaste: Start / Stopp in anderen Programmen\nStrg + Alt + Rücktaste: Abbrechen · maximal 5 Minuten je Aufnahme", TextWrapping=TextWrapping.Wrap, Margin=new Thickness(0,12,0,12) });
         Add(stack,"Ergebnis",result);
         stack.Children.Add(Button("Ergebnis kopieren",()=> { if(result.Text.Length>0) Clipboard.SetText(result.Text); return Task.CompletedTask; }));
         stack.Children.Add(Button("Verlauf ansehen",()=> { ShowHistory(); return Task.CompletedTask; }));
@@ -102,8 +102,8 @@ public sealed class AppWindow : Window
     {
         handle=new WindowInteropHelper(this).Handle;source=HwndSource.FromHwnd(handle);source.AddHook(Hook);
         hotkeys=Native.RegisterHotKey(handle,1,0x4006,0x20);
-        Native.RegisterHotKey(handle,2,0x4006,0x1B);
-        if(!hotkeys) status.Text="Tastenkürzel belegt. Aufnahme über den Button möglich.";
+        bool cancelHotkey=Native.RegisterHotKey(handle,2,0x4003,0x08);
+        if(!hotkeys || !cancelHotkey) status.Text="Tastenkürzel belegt. Aufnahme über den Button möglich.";
         tray=new Forms.NotifyIcon { Icon=System.Drawing.SystemIcons.Application,Text="Sprechklar",Visible=true };
         var menu=new Forms.ContextMenuStrip();
         menu.Items.Add("Öffnen",null,(_,_)=>Dispatcher.Invoke(()=>{Show();Activate();}));
