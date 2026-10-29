@@ -44,7 +44,6 @@ jobs:
           Copy-Item ports/README.md ports/dist/Sprechklar/ANLEITUNG.md
           Copy-Item ports/THIRD_PARTY_NOTICES.md ports/dist/Sprechklar/
           Copy-Item ports/licenses ports/dist/Sprechklar/licenses -Recurse
-          Copy-Item ports/vendor/whisper.cpp/ggml/LICENSE ports/dist/Sprechklar/engine/GGML-LICENSE.txt
       - name: CLI startup smoke test
         shell: pwsh
         run: |
@@ -102,7 +101,6 @@ jobs:
           cp ports/licenses/*.txt ports/android/app/src/main/assets/licenses/
           cp ports/THIRD_PARTY_NOTICES.md ports/android/app/src/main/assets/licenses/
           cp ports/android/vendor/whisper.cpp/LICENSE ports/android/app/src/main/assets/licenses/Whisper.txt
-          cp ports/android/vendor/whisper.cpp/ggml/LICENSE ports/android/app/src/main/assets/licenses/GGML.txt
       - name: Build APK and lint
         working-directory: ports/android
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
