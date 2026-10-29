@@ -26,7 +26,7 @@ Diese Seite beschreibt technische Schutzmaßnahmen und Prüfgrenzen, keine Siche
 - Ollama ist ein separat betriebener lokaler Dienst. Ihn mit OLLAMA_NO_CLOUD=1 betreiben,
   nur lokale Modelle verwenden und nicht ins Netzwerk freigeben.
 - Die Windows-App besitzt noch kein öffentlich vertrauenswürdiges Authenticode-Zertifikat.
-  Defender-Scan und SHA-256-Prüfsummen ersetzen keine Herausgebersignatur.
+  Virenscan und SHA-256-Prüfsummen ersetzen keine Herausgebersignatur.
 
 ## Android
 
@@ -79,9 +79,16 @@ Release-Schlüssel normalerweise einmal deinstallieren; dabei gehen lokale Model
 - Android-Release-Unit-Tests, Lint, Prüfung der tatsächlichen Manifest-Berechtigungen und Debug-Flags.
 - Bei vorhandenem Schlüssel: apksigner verify mit öffentlichem Zertifikat-Fingerprint.
 - SHA256SUMS.txt benennt die Dateien des jeweiligen Pakets und SOURCE-COMMIT.txt dessen Quellstand.
-- Separater Windows-Runner scannt exakt diese Dateien einschließlich APK-Archiv mit Defender.
-  Musterübermittlung und Cloudanalyse werden für diesen Scan deaktiviert; lokale Signaturen werden
-  aktualisiert. Scannerfehler oder fehlende Prüfung blockieren die geprüften Downloadpakete.
+- Separater Linux-Runner scannt exakt diese Dateien einschließlich APK-Archiv mit ClamAV.
+  Ein offizielles ClamAV-1.4-Containerimage liefert die Engine und vorinstallierte Datenbanken;
+  sein konkreter Digest wird protokolliert und im gesamten Prüflauf wiederverwendet.
+  Signaturen werden aktualisiert. Falls das Update fehlschlägt, sind höchstens sieben Tage
+  alte offizielle Datenbanken zulässig; die Engine erzwingt diese Grenze.
+  Nur der Signatur-Updater hat Netzwerkzugang und sieht keine App-Dateien.
+  Der eigentliche Scanner läuft mit --network none und schreibgeschützten Paketen.
+  Scannerfehler, Malwarefunde, überschrittene Scanlimits oder fehlende Prüfung blockieren
+  die geprüften Downloadpakete. Die Defender-Alternative scheiterte zuvor am Dienst des
+  Windows-Build-Rechners; dies war kein Malwarefund.
 - Rohkandidaten heißen candidate-* und sind **keine freigegebenen Downloads**.
 - Sprechklar-security-reports enthält Scanprotokolle, auch bei Fehlern. Nur erfolgreich gescannte
   Pakete tragen den Namen Sprechklar-*-security-preview.

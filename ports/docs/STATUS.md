@@ -81,7 +81,8 @@ Clipboard-Verlauf-/Cloud-Ausschluss; WAV und Transkript ohne App-Tempdateien üb
 Android: Release statt Debug; sensible Clipboard-Markierung; Screenshot-/Vorschaubildschutz;
 privater, wiederverwendbarer Signierschlüssel aus Secrets, kein Debug-Fallback.
 CI: Freigabetests, Clipboard-OS-Test, echte Pipe-Transkription, NuGet-Audit,
-Release-Manifestprüfung, SHA-256-Dateilisten und Defender-Scan als Paketfreigabeschranke.
+Release-Manifestprüfung, SHA-256-Dateilisten und isolierter ClamAV-Scan als Paketfreigabeschranke.
+Der erste Defender-Versuch scheiterte am Scanner-Dienst auf dem CI-Rechner, nicht an einem Malwarefund.
 
 Der aktuelle tatsächliche Build-/Scanstatus ist im zugehörigen Actions-Lauf zu prüfen.
 Ohne Schlüssel bleibt Android nicht installierbar. Kein vollständiger Schutz vor Prompt Injection,

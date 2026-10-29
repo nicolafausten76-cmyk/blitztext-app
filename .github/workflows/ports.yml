@@ -180,7 +180,7 @@ jobs:
   security:
     name: Scan actual packages and publish checked previews
     needs: [windows, android]
-    runs-on: windows-2022
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -204,13 +204,36 @@ jobs:
             }
             $lines | Set-Content -LiteralPath (Join-Path $root "SHA256SUMS.txt") -Encoding utf8
           }
-      - name: Scan Windows files with Defender
-        shell: pwsh
-        run: ports/scripts/Scan-Windows.ps1 -Target checked/windows -Report reports/windows-defender.txt
-      - name: Scan Android archive with Defender
-        if: ${{ !cancelled() }}
-        shell: pwsh
-        run: ports/scripts/Scan-Windows.ps1 -Target checked/android -Report reports/android-defender.txt
+      - name: Prepare isolated ClamAV scanner and current signatures
+        id: avprep
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          docker pull clamav/clamav:1.4 2>&1 | tee reports/clamav-image-pull.txt
+          image=$(docker image inspect clamav/clamav:1.4 --format '{{index .RepoDigests 0}}')
+          printf 'CLAMAV_IMAGE=%s\n' "$image" >> "$GITHUB_ENV"
+          printf 'Source commit: %s\nScanner image: %s\n' "$GITHUB_SHA" "$image" > reports/clamav-environment.txt
+          docker volume create sprechklar-av-db
+          # Official image preloads databases into the newly mounted volume.
+          # Only this update container has network access; app packages are NOT mounted here.
+          if docker run --rm -v sprechklar-av-db:/var/lib/clamav --entrypoint freshclam "$image" --stdout 2>&1 | tee reports/clamav-update.txt; then
+            echo "Signature update succeeded" >> reports/clamav-environment.txt
+          else
+            echo "Signature update failed; the scanner still MUST pass --fail-if-cvd-older-than=7 using the official bundled database." >> reports/clamav-environment.txt
+          fi
+          docker run --rm --network none -v sprechklar-av-db:/var/lib/clamav:ro --entrypoint clamscan "$image" --version | tee -a reports/clamav-environment.txt
+      - name: Scan actual Windows files offline with ClamAV
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none -v sprechklar-av-db:/var/lib/clamav:ro -v "$PWD/checked:/scan:ro" --entrypoint clamscan "$CLAMAV_IMAGE" --recursive --scan-archive=yes --alert-exceeds-max=yes --max-filesize=300M --max-scansize=600M --fail-if-cvd-older-than=7 /scan/windows 2>&1 | tee reports/windows-clamav.txt
+      - name: Scan actual Android archive offline with ClamAV
+        if: ${{ !cancelled() && steps.avprep.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none -v sprechklar-av-db:/var/lib/clamav:ro -v "$PWD/checked:/scan:ro" --entrypoint clamscan "$CLAMAV_IMAGE" --recursive --scan-archive=yes --alert-exceeds-max=yes --max-filesize=300M --max-scansize=600M --fail-if-cvd-older-than=7 /scan/android 2>&1 | tee reports/android-clamav.txt
       - name: Publish scan evidence even when a scan fails
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
